@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Pasaporte</title>
+  <meta name="description" content="Tu mapa de viajes: marca países y ciudades y guarda las fotos, vídeos y recuerdos de cada sitio.">
+  <meta name="theme-color" content="#0b1f2c">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='27' fill='none' stroke='%23ff5f3d' stroke-width='5'/%3E%3Ccircle cx='32' cy='32' r='18' fill='none' stroke='%23ff5f3d' stroke-width='2' stroke-dasharray='3 3'/%3E%3Ccircle cx='32' cy='32' r='6' fill='%23ff5f3d'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Geist:wght@400..700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <filter id="ink" x="-10%" y="-10%" width="120%" height="120%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="n"/>
+        <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.25 1.55" result="m"/>
+        <feComposite in="SourceGraphic" in2="m" operator="in" result="c"/>
+        <feTurbulence type="turbulence" baseFrequency="0.05" numOctaves="1" seed="3" result="w"/>
+        <feDisplacementMap in="c" in2="w" scale="1.6"/>
+      </filter>
+      <radialGradient id="aura">
+        <stop offset="0" stop-color="#ff5f3d" stop-opacity="0.75"/>
+        <stop offset="0.45" stop-color="#ff5f3d" stop-opacity="0.32"/>
+        <stop offset="1" stop-color="#ff5f3d" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="seaGlow" cx="50%" cy="45%" r="65%">
+        <stop offset="0" stop-color="#123447"/>
+        <stop offset="1" stop-color="#0b1f2c"/>
+      </radialGradient>
+    </defs>
+  </svg>
+
+  <main id="app">
+    <div id="map" aria-label="Mapa del mundo"></div>
+
+    <header class="topbar">
+      <button class="brand" id="brandBtn" type="button" aria-label="Volver al mapa del mundo">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">Pasaporte</span>
+      </button>
+
+      <div class="search" id="search">
+        <i class="ph ph-magnifying-glass" aria-hidden="true"></i>
+        <input id="searchInput" type="search" autocomplete="off" spellcheck="false"
+               placeholder="Busca un país o ciudad" aria-label="Buscar país o ciudad"
+               aria-controls="searchResults" aria-expanded="false">
+        <kbd class="search-kbd" aria-hidden="true">/</kbd>
+        <ul class="search-results" id="searchResults" role="listbox" hidden></ul>
+      </div>
+
+      <div class="top-actions">
+        <button class="icon-btn" id="backupBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Compartir y copias">
+          <i class="ph ph-users-three" aria-hidden="true"></i>
+        </button>
+        <div class="menu" id="backupMenu" hidden>
+          <div id="shareBox" class="share-box"><p class="menu-label">Cargando…</p></div>
+          <hr>
+          <button type="button" id="exportBtn"><i class="ph ph-download-simple" aria-hidden="true"></i><span>Descargar copia (.zip)</span></button>
+          <button type="button" id="importBtn"><i class="ph ph-upload-simple" aria-hidden="true"></i><span>Subir una copia (.zip)</span></button>
+          <button type="button" id="soundBtn" role="switch" aria-checked="false"><i class="ph ph-speaker-simple-slash" aria-hidden="true"></i><span>Sonido del sello <small>apagado</small></span></button>
+          <button type="button" id="logoutBtn"><i class="ph ph-sign-out" aria-hidden="true"></i><span>Cerrar sesión</span></button>
+        </div>
+        <input type="file" id="importInput" accept=".zip" hidden>
+      </div>
+    </header>
+
+    <nav class="crumbs" id="crumbs" aria-label="Ubicación"></nav>
+
+    <aside class="passport" id="passport" aria-label="Tu pasaporte">
+      <button class="sheet-handle" id="passportHandle" type="button" aria-label="Mostrar u ocultar tu pasaporte"></button>
+      <div class="passport-head">
+        <h1 class="passport-title">Tu pasaporte</h1>
+        <p class="passport-line" id="passportLine"></p>
+        <dl class="stats" id="stats"></dl>
+      </div>
+      <div class="passport-body" id="passportBody"></div>
+    </aside>
+
+    <aside class="country" id="countryPanel" aria-label="País" hidden></aside>
+
+    <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+    <div class="city-pop" id="cityPop" hidden></div>
+    <div class="stamp-stage" id="stampStage" aria-hidden="true"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </main>
+
+  <section class="auth" id="auth" hidden aria-labelledby="authTitle">
+    <form class="auth-card" id="authForm" data-mode="login">
+      <span class="brand-mark auth-mark" aria-hidden="true"></span>
+      <h1 id="authTitle">Vuestro mapa de viajes</h1>
+      <p class="auth-lead">Los países, las ciudades y las fotos que habéis vivido, en un mismo pasaporte.</p>
+      <div id="authFields" class="auth-fields">
+        <label class="field"><span>Email</span><input name="email" type="email" autocomplete="email" required></label>
+        <label class="field"><span>Contraseña</span><input name="password" type="password" minlength="6" autocomplete="current-password" required></label>
+      </div>
+      <p class="auth-msg" id="authMsg" role="status" aria-live="polite"></p>
+      <button class="solid-btn wide" id="authSubmit" type="submit">Entrar</button>
+      <button class="link-btn" id="authSwitch" type="button">Es mi primera vez: crear cuenta</button>
+      <button class="ghost-btn" id="authLogout" type="button" hidden>Usar otra cuenta</button>
+    </form>
+  </section>
+
+  <section class="album" id="album" aria-label="Álbum" hidden>
+    <div class="album-scroll" id="albumScroll">
+      <header class="album-head" id="albumHead"></header>
+      <div class="album-filters" id="albumFilters"></div>
+      <div class="collage" id="collage"></div>
+    </div>
+    <div class="drop-veil" id="dropVeil" hidden><div><i class="ph ph-images" aria-hidden="true"></i><p id="dropText">Suelta para añadir</p></div></div>
+    <input type="file" id="mediaInput" accept="image/*,video/*" multiple hidden>
+  </section>
+
+  <dialog class="lightbox" id="lightbox" aria-label="Foto ampliada">
+    <div class="lb-stage" id="lbStage"></div>
+    <button class="lb-nav lb-prev" id="lbPrev" type="button" aria-label="Anterior"><i class="ph ph-caret-left" aria-hidden="true"></i></button>
+    <button class="lb-nav lb-next" id="lbNext" type="button" aria-label="Siguiente"><i class="ph ph-caret-right" aria-hidden="true"></i></button>
+    <footer class="lb-bar">
+      <div class="lb-meta" id="lbMeta"></div>
+      <div class="lb-actions">
+        <button class="ghost-btn" id="lbStar" type="button"><i class="ph ph-star" aria-hidden="true"></i><span>Destacar</span></button>
+        <button class="ghost-btn" id="lbCover" type="button"><i class="ph ph-image-square" aria-hidden="true"></i><span>Portada</span></button>
+        <button class="ghost-btn danger" id="lbDelete" type="button"><i class="ph ph-trash" aria-hidden="true"></i><span>Borrar</span></button>
+        <button class="icon-btn" id="lbClose" type="button" aria-label="Cerrar"><i class="ph ph-x" aria-hidden="true"></i></button>
+      </div>
+    </footer>
+  </dialog>
+
+  <dialog class="note-dialog" id="noteDialog" aria-labelledby="noteDialogTitle">
+    <form method="dialog" id="noteForm">
+      <h2 id="noteDialogTitle">Nuevo recuerdo</h2>
+      <label class="field">
+        <span>Título</span>
+        <input name="title" maxlength="80" placeholder="La cena en Montmartre">
+      </label>
+      <label class="field">
+        <span>Fecha</span>
+        <input name="date" type="date">
+      </label>
+      <label class="field">
+        <span>Qué pasó</span>
+        <textarea name="text" rows="6" maxlength="2000" required placeholder="Lo que no quieres olvidar de este sitio"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button class="ghost-btn" value="cancel" formnovalidate type="submit">Cancelar</button>
+        <button class="solid-btn" value="save" type="submit"><i class="ph ph-pen-nib" aria-hidden="true"></i>Guardar recuerdo</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="confirm-dialog" id="confirmDialog">
+    <form method="dialog">
+      <p id="confirmText"></p>
+      <div class="dialog-actions">
+        <button class="ghost-btn" value="cancel" type="submit">Cancelar</button>
+        <button class="solid-btn danger" value="ok" type="submit" id="confirmOk">Borrar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="vendor/d3.min.js"></script>
+  <script src="vendor/fflate.js"></script>
+  <script src="vendor/supabase.js"></script>
+  <script src="data/countries.js"></script>
+  <script src="data/cities.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
