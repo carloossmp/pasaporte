@@ -670,6 +670,7 @@
     renderCities();
     renderPassport();
     if (S.focus) renderCountryPanel();
+    if (!bookEl.hidden) renderBook();
   }
 
   /* ================= passport panel ================= */
@@ -761,6 +762,7 @@
     countUp($('#stats [data-count="t"]'), 't', nCities);
     countUp($('#stats [data-count="m"]'), 'm', nMedia);
     $('#stats .progress span').style.width = `${Math.min(100, (isos.length / TOTAL_COUNTRIES) * 100)}%`;
+    $('#openBook').hidden = !isos.length;
     const body = $('#passportBody');
     if (!isos.length) {
       body.innerHTML = `<div class="blank">
@@ -985,7 +987,10 @@
     const sc = albumScope();
     const f = S.album.filter;
     const ids = sc.country && f && f !== 'all' ? [f] : sc.ids;
-    return [...S.media.values()].filter((m) => ids.includes(m.placeId)).sort((a, b) => a.takenAt - b.takenAt || a.createdAt - b.createdAt);
+    // shuffled, but steady while this album stays open
+    S.album.seed = S.album.seed || String(Math.random());
+    const key = (m) => hash(S.album.seed + m.id);
+    return [...S.media.values()].filter((m) => ids.includes(m.placeId)).sort((a, b) => key(a) - key(b));
   }
 
   async function openAlbum(scope) {
@@ -1059,7 +1064,7 @@
       if (act === 'close') closeAlbum();
       if (act === 'add') $('#mediaInput').click();
       if (act === 'note') openNote();
-      if (act === 'country') { S.album = { iso: sc.iso, filter: sc.place.id }; renderAlbum(); }
+      if (act === 'country') { S.album = { iso: sc.iso, filter: sc.place.id, seed: S.album.seed }; renderAlbum(); }
     };
     $('#albumHead').querySelectorAll('[data-date]').forEach((inp) => (inp.onchange = async () => {
       let p = sc.place;
@@ -1084,15 +1089,55 @@
     renderCollage();
   }
 
-  function sizeFor(m, i) {
-    if (m.kind === 'note') return (m.text || '').length > 420 ? 'xl' : (m.text || '').length > 110 ? 'wide' : '';
-    if (m.featured) return 'xl';
-    const r = (m.w || 1) / (m.h || 1);
-    if (r >= 1.65) return 'wide';
-    if (r <= 0.72) return 'tall';
-    if (r > 1.2 && i % 5 === 2) return 'wide';
-    if (i % 11 === 0 && i > 0) return 'xl';
-    return '';
+  /* Collage: photos fall into small mosaics picked at random. Every mosaic is a
+     6-column block that fills completely, so there are never holes.
+     Slot = [column, row, width, height]. */
+  const MOSAICS = [
+    { h: 4, weight: 3, slots: [[1, 1, 4, 4], [5, 1, 2, 2], [5, 3, 2, 2]] },
+    { h: 4, weight: 3, slots: [[1, 1, 2, 2], [1, 3, 2, 2], [3, 1, 4, 4]] },
+    { h: 3, weight: 2, slots: [[1, 1, 3, 3], [4, 1, 3, 3]] },
+    { h: 3, weight: 2, slots: [[1, 1, 2, 3], [3, 1, 2, 3], [5, 1, 2, 3]] },
+    { h: 4, weight: 3, slots: [[1, 1, 3, 4], [4, 1, 3, 2], [4, 3, 3, 2]] },
+    { h: 4, weight: 3, slots: [[1, 1, 3, 2], [1, 3, 3, 2], [4, 1, 3, 4]] },
+    { h: 2, weight: 2, slots: [[1, 1, 2, 2], [3, 1, 2, 2], [5, 1, 2, 2]] },
+    { h: 3, weight: 2, slots: [[1, 1, 4, 3], [5, 1, 2, 3]] },
+    { h: 3, weight: 2, slots: [[1, 1, 2, 3], [3, 1, 4, 3]] },
+    { h: 5, weight: 3, slots: [[1, 1, 4, 3], [5, 1, 2, 3], [1, 4, 2, 2], [3, 4, 4, 2]] },
+    { h: 5, weight: 3, slots: [[1, 1, 2, 2], [3, 1, 4, 2], [1, 3, 4, 3], [5, 3, 2, 3]] },
+    { h: 4, weight: 1, slots: [[1, 1, 6, 4]] },
+  ];
+  const SOLO = MOSAICS.length - 1;
+  const ratio = (m) => (m.w || 1) / (m.h || 1);
+
+  function rng(seed) {
+    let a = hash(seed);
+    return () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }
+
+  function mosaics(media, rnd) {
+    const out = [];
+    let i = 0, last = -1;
+    while (i < media.length) {
+      const left = media.length - i;
+      let opts = MOSAICS.map((_, k) => k).filter((k) => MOSAICS[k].slots.length <= left && k !== last);
+      if (!opts.length) opts = [SOLO];
+      const bag = opts.flatMap((k) => Array(MOSAICS[k].weight).fill(k));
+      const k = bag[Math.floor(rnd() * bag.length)];
+      last = k;
+      const group = media.slice(i, i + MOSAICS[k].slots.length);
+      i += group.length;
+      if (group.length === 1 && ratio(group[0]) < 0.85) { out.push({ h: 7, cells: [{ m: group[0], s: [1, 1, 6, 7] }] }); continue; }
+      // portrait photos take the tall slots; a starred photo takes the biggest one
+      const slots = [...MOSAICS[k].slots].sort((a, b) => a[2] / a[3] - b[2] / b[3]);
+      const items = [...group].sort((a, b) => ratio(a) - ratio(b));
+      const star = items.findIndex((m) => m.featured);
+      if (star >= 0) {
+        const big = slots.reduce((best, s, j) => (s[2] * s[3] > slots[best][2] * slots[best][3] ? j : best), 0);
+        [items[star], items[big]] = [items[big], items[star]];
+      }
+      out.push({ h: MOSAICS[k].h, cells: items.map((m, j) => ({ m, s: slots[j] })) });
+    }
+    return out;
   }
 
   function renderCollage(pending = 0) {
@@ -1100,29 +1145,37 @@
     const sc = albumScope();
     const showWhere = sc.country && S.album.filter === 'all';
     const where = (m) => { const p = S.places.get(m.placeId); return p?.type === 'city' ? p.name : ''; };
-    let html = items.map((m, i) => {
-      const cls = sizeFor(m, i);
-      const st = `style="--i:${Math.min(i, 24)}"`;
-      if (m.kind === 'note') {
-        const len = (m.text || '').length;
-        return `<article class="tile note ${cls}" ${st} tabindex="0" role="button" data-id="${m.id}" aria-label="Recuerdo: ${esc(m.title || 'sin título')}">
-          ${m.title ? `<h4>${esc(m.title)}</h4>` : ''}<p style="--lines:${cls === 'xl' ? 12 : m.title ? (cls ? 4 : 3) : 5}">${esc(m.text)}</p>
-          <time>${fmtDate(m.takenAt)}${showWhere && where(m) ? ' · ' + esc(where(m)) : ''}</time></article>`;
-      }
+    const rnd = rng(S.album.seed + items.length);
+    let n = 0, notes = 0;
+    const tile = ({ m, s }) => {
+      const st = `style="--i:${Math.min(n++, 24)};grid-area:${s[1]} / ${s[0]} / span ${s[3]} / span ${s[2]}"`;
       const media = m.kind === 'video'
         ? `<video src="${urlOf(m, 'blob')}" ${m.thumbPath ? `poster="${urlOf(m)}"` : ''} muted loop playsinline preload="none"></video>
            <span class="badge"><i class="ph-fill ph-play" aria-hidden="true"></i>${m.duration >= 1 ? `${Math.floor(m.duration / 60)}:${String(Math.round(m.duration % 60)).padStart(2, '0')}` : 'Vídeo'}</span>`
         : `<img src="${urlOf(m)}" alt="${esc(m.name || '')}" decoding="async">`;
-      return `<button class="tile ${cls}" ${st} type="button" data-id="${m.id}" aria-label="Abrir ${m.kind === 'video' ? 'vídeo' : 'foto'}">${media}
+      return `<button class="tile" ${st} type="button" data-id="${m.id}" aria-label="Abrir ${m.kind === 'video' ? 'vídeo' : 'foto'}">${media}
         ${m.featured ? '<i class="ph-fill ph-star star" aria-hidden="true"></i>' : ''}
-        ${showWhere && where(m) && m.kind !== 'video' ? `<span class="where">${esc(where(m))}</span>` : ''}</button>`;
-    }).join('');
-    html += Array.from({ length: pending }, () => '<div class="tile loading" aria-hidden="true"></div>').join('');
+        ${showWhere && where(m) && m.kind !== 'video' && s[2] > 2 ? `<span class="where">${esc(where(m))}</span>` : ''}</button>`;
+    };
+    const note = (m) => `<div class="block note-block"><article class="tile note n${notes++ % 3}" style="--i:${Math.min(n++, 24)}" tabindex="0" role="button" data-id="${m.id}" aria-label="Recuerdo: ${esc(m.title || 'sin título')}">
+      ${m.title ? `<h4>${esc(m.title)}</h4>` : ''}<p style="--lines:9">${esc(m.text)}</p>
+      <time>${fmtDate(m.takenAt)}${showWhere && where(m) ? ' · ' + esc(where(m)) : ''}</time></article></div>`;
+    const flush = (run) => mosaics(run, rnd).map((b) => `<div class="block" style="--h:${b.h}">${b.cells.map(tile).join('')}</div>`).join('');
+
+    let html = '', run = [];
+    for (const m of items) {
+      if (m.kind !== 'note') { run.push(m); continue; }
+      // a note closes the mosaic in progress once it has a few photos in it
+      if (run.length >= 3 || !html) { html += flush(run); run = []; }
+      html += note(m);
+    }
+    html += flush(run);
+    for (let i = 0; i < pending; i += 3) html += '<div class="block" style="--h:2" aria-hidden="true"><div class="tile loading" style="grid-area:1 / 1 / span 2 / span 2"></div><div class="tile loading" style="grid-area:1 / 3 / span 2 / span 2"></div><div class="tile loading" style="grid-area:1 / 5 / span 2 / span 2"></div></div>';
     if (!items.length && !pending) {
       html = `<div class="album-empty">
         <i class="ph ph-images" aria-hidden="true"></i>
         <h3>Aquí va el álbum de ${esc(sc.title)}</h3>
-        <p>Arrastra las fotos y vídeos del viaje a esta pantalla o elígelos desde tu ordenador. Se ordenan solos en un collage.</p>
+        <p>Elige las fotos y vídeos del viaje, o arrástralos a esta pantalla. Se colocan solos en un collage.</p>
         <button class="solid-btn" type="button" data-empty-add><i class="ph ph-plus" aria-hidden="true"></i>Elegir fotos y vídeos</button></div>`;
     }
     collage.innerHTML = html;
@@ -1300,6 +1353,67 @@
     toast('Recuerdo guardado');
   });
 
+  /* ================= the open passport ================= */
+  const bookEl = $('#book');
+  function renderBook() {
+    const isos = visitedIsos().sort((a, b) => firstVisit(a) - firstVisit(b));
+    if (!isos.length) { closeBook(); return; }
+    const since = new Date(firstVisit(isos[0])).getFullYear();
+    $('#bookHead').innerHTML = `
+      <button class="ghost-btn" type="button" data-act="close"><i class="ph ph-arrow-left" aria-hidden="true"></i>Mapa</button>
+      <div>
+        <h2 class="album-title">Vuestro pasaporte</h2>
+        <p class="album-sub"><span>${plural(isos.length, 'país', 'países')}</span><span>${plural(cityPlaces().length, 'ciudad', 'ciudades')}</span><span>viajando juntos desde ${since}</span></p>
+      </div>`;
+    $('#bookPages').innerHTML = isos.map((iso, i) => {
+      const name = countryName(iso);
+      const cities = cityPlaces(iso).sort((a, b) => tripTime(a) - tripTime(b));
+      const times = [...S.places.values()].filter((p) => p.iso === iso).map(tripTime);
+      const y0 = new Date(Math.min(...times)).getFullYear(), y1 = new Date(Math.max(...times)).getFullYear();
+      const media = mediaOfCountry(iso);
+      const flag = flagUrl(iso);
+      return `<article class="page" style="--i:${Math.min(i, 14)}">
+        <button class="page-stamp stamp-ink" type="button" data-iso="${esc(iso)}" aria-label="Ver ${esc(name)} en el mapa">${countryStamp(iso)}</button>
+        <div class="page-body">
+          <h3>${flag ? `<img src="${flag}" alt="">` : ''}${esc(name)}</h3>
+          <p class="page-meta">${y0 === y1 ? y0 : `${y0}-${y1}`}${media.length ? ' · ' + countLabel(media) : ''}</p>
+          ${cities.length ? `<ul class="visa">${cities.map((p) => {
+            const m = mediaOf(p.id);
+            return `<li><button type="button" data-place="${esc(p.id)}"><span>${esc(p.name)}</span><i aria-hidden="true"></i><small>${m.length ? countLabel(m) : 'sin fotos aún'}</small></button></li>`;
+          }).join('')}</ul>` : '<p class="page-empty">Sin ciudades selladas todavía.</p>'}
+          <button class="link-btn" type="button" data-album="${esc(iso)}">Abrir el álbum de ${esc(name)}</button>
+        </div></article>`;
+    }).join('');
+  }
+  bookEl.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act],[data-iso],[data-place],[data-album]');
+    if (!b) return;
+    if (b.dataset.act === 'close') closeBook();
+    else if (b.dataset.iso) { closeBook(); focusCountry(b.dataset.iso); }
+    else if (b.dataset.place) openAlbum({ placeId: b.dataset.place });
+    else if (b.dataset.album) openAlbum({ iso: b.dataset.album });
+  });
+  function openBook() {
+    renderBook();
+    bookEl.hidden = false;
+    $('#bookScroll').scrollTop = 0;
+    $('#passport').classList.remove('open');
+    if (!reduceMotion) {
+      bookEl.classList.add('entering');
+      void bookEl.offsetHeight;
+      bookEl.classList.remove('entering');
+    }
+    $('#bookHead button')?.focus({ preventScroll: true });
+  }
+  function closeBook() {
+    if (bookEl.hidden) return;
+    const done = () => { bookEl.hidden = true; bookEl.classList.remove('closing'); };
+    if (reduceMotion) return done();
+    bookEl.classList.add('closing');
+    setTimeout(done, 320);
+  }
+  $('#openBook').onclick = (e) => { e.stopPropagation(); openBook(); };
+
   /* ================= lightbox ================= */
   const lb = $('#lightbox');
   let lbList = [], lbIndex = 0;
@@ -1455,9 +1569,10 @@
     if (!pop.hidden) { hideCityPop(); return; }
     if (!backupMenu.hidden) { backupMenu.hidden = true; return; }
     if (!albumEl.hidden) { closeAlbum(); return; }
+    if (!bookEl.hidden) { closeBook(); return; }
     if (S.focus && !typing) goWorld();
   });
-  $('#brandBtn').onclick = () => { closeAlbum(); if (S.focus) goWorld(); };
+  $('#brandBtn').onclick = () => { closeAlbum(); closeBook(); if (S.focus) goWorld(); };
 
   let rt = 0;
   addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(layout, 140); });

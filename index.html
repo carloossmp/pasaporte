@@ -78,6 +78,7 @@
         <h1 class="passport-title">Tu pasaporte</h1>
         <p class="passport-line" id="passportLine"></p>
         <dl class="stats" id="stats"></dl>
+        <button class="ghost-btn wide open-book" id="openBook" type="button" hidden><i class="ph ph-book-open" aria-hidden="true"></i>Abrir pasaporte</button>
       </div>
       <div class="passport-body" id="passportBody"></div>
     </aside>
@@ -104,6 +105,13 @@
       <button class="link-btn" id="authSwitch" type="button">Es mi primera vez: crear cuenta</button>
       <button class="ghost-btn" id="authLogout" type="button" hidden>Usar otra cuenta</button>
     </form>
+  </section>
+
+  <section class="book" id="book" aria-label="Pasaporte" hidden>
+    <div class="book-scroll" id="bookScroll">
+      <header class="book-head" id="bookHead"></header>
+      <div class="book-pages" id="bookPages"></div>
+    </div>
   </section>
 
   <section class="album" id="album" aria-label="Álbum" hidden>
